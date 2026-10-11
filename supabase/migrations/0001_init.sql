@@ -810,22 +810,16 @@ create policy "organizations_select" on public.organizations for select using (t
 create policy "organizations_insert" on public.organizations
   for insert with check (created_by = auth.uid());
 create policy "organizations_update" on public.organizations
-  for update using (
-    exists (
-      select 1 from public.organization_members m
-      where m.organization_id = id and m.profile_id = auth.uid() and m.role in ('owner', 'admin')
-    )
-  );
+  for update using (public.org_has_role(id, array['owner', 'admin']));
 
 create policy "org_members_select" on public.organization_members for select using (true);
 create policy "org_members_write" on public.organization_members
   for all using (
-    exists (
-      select 1 from public.organization_members m
-      where m.organization_id = organization_members.organization_id
-        and m.profile_id = auth.uid()
-        and m.role in ('owner', 'admin')
-    )
+    public.org_has_role(organization_id, array['owner', 'admin'])
+    or profile_id = auth.uid()
+  )
+  with check (
+    public.org_has_role(organization_id, array['owner', 'admin'])
     or profile_id = auth.uid()
   );
 
@@ -855,7 +849,7 @@ create policy "comments_delete" on public.comments
   for delete using (author_id = auth.uid());
 
 create policy "comment_likes_own" on public.comment_likes
-  for all using (true) with check (profile_id = auth.uid());
+  for all using (profile_id = auth.uid()) with check (profile_id = auth.uid());
 
 create policy "reposts_select" on public.reposts for select using (true);
 create policy "reposts_write" on public.reposts
@@ -1009,9 +1003,21 @@ values
   ('stories', 'stories', false)
 on conflict (id) do nothing;
 
-create policy "storage_own_folder_select" on storage.objects
+create policy "storage_public_profile_read" on storage.objects
   for select using (
-    bucket_id in ('avatars', 'covers', 'post-media', 'message-media', 'stories')
+    bucket_id in ('avatars', 'covers')
+    and auth.role() = 'authenticated'
+  );
+
+create policy "storage_post_media_read" on storage.objects
+  for select using (
+    bucket_id = 'post-media'
+    and auth.role() = 'authenticated'
+  );
+
+create policy "storage_own_private_read" on storage.objects
+  for select using (
+    bucket_id in ('message-media', 'stories')
     and (auth.uid())::text = (storage.foldername(name))[1]
   );
 
